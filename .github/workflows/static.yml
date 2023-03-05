@@ -26,7 +26,7 @@ concurrency:
 jobs:
   # Single deploy job since we're just deploying
   deploy:
-    if: github.event.pull_request.merged == true or github.event.push
+    if: github.event_name == "push" || github.event.pull_request.merged == true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
