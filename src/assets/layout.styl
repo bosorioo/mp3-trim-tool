@@ -1,0 +1,95 @@
+// Flex-box
+.flex
+.row
+.column
+  display flex
+  align-items start
+  justify-content start
+
+.column
+  flex-direction column
+
+.flex-wrap
+  flex-wrap wrap
+
+$flex-position-options = {
+  center: 'center',
+  stretch: 'stretch',
+  start: 'flex-start',
+  end: 'flex-end',
+  between: 'space-between'
+}
+
+for opt, value in $flex-position-options
+  .items-{opt}
+    align-items unquote(value)
+  .justify-{opt}
+    justify-content unquote(value)
+  .flex-{opt}
+    justify-content unquote(value)
+    align-items unquote(value)
+  .self-{opt}
+    align-self unquote(value)
+    justify-self unquote(value)
+
+$position-values = relative absolute sticky fixed
+$default-top-left-positions = fixed absolute
+for $value in $position-values
+  .{$value}
+    position $value
+
+.full-height
+  height 100%
+
+.full-width
+  width 100%
+
+.fit
+  height 100%
+  width 100%
+
+.scroll
+  overflow auto
+
+.overflow-hidden
+  overflow hidden
+
+$spacing-sizes = 2px 4px 8px 12px 16px 24px 32px 40px 56px 72px 96px
+$spacing-keys = { m: 'margin', p: 'padding' }
+
+for $key, $value in $spacing-keys
+  for $i in 0 .. length($spacing-sizes) - 1
+    .{$key}-{$i}
+      {$value} $spacing-sizes[$i]
+    .{$key}-t-{$i}
+      {$value}-top $spacing-sizes[$i]
+    .{$key}-b-{$i}
+      {$value}-bottom $spacing-sizes[$i]
+    .{$key}-l-{$i}
+      {$value}-left $spacing-sizes[$i]
+    .{$key}-r-{$i}
+      {$value}-right $spacing-sizes[$i]
+    .{$key}-x-{$i}
+      {$value}-left $spacing-sizes[$i];
+      {$value}-right $spacing-sizes[$i]
+    .{$key}-y-{$i}
+      {$value}-top $spacing-sizes[$i];
+      {$value}-bottom $spacing-sizes[$i]
+
+for val in 1..16
+  .flex-{val}
+    flex-grow val
+
+for val in 8..72
+  .font-{val}
+    font-size '%spx' % val
+
+for weight in 1..7
+  .weight-{weight * 100}
+    font-weight weight * 100
+
+$colors = 'white' 'black'
+for $color in $colors
+  .text-{$color}
+  .{$color}
+    color unquote($color)
