@@ -1,35 +1,18 @@
-# mp3-tool
+# mp3-trim-tool
 
-This template should help get you started developing with Vue 3 in Vite.
+This is a simple webapp written with Vue.js 3 that allows users to open audio files, trim and apply fade in/out effects to it. It is also possible to encode the modified audio file in an .mp3 file to download it.
 
-## Recommended IDE Setup
+You can access this tool here: https://bosorioo.github.io/mp3-trim-tool/
 
-[VSCode](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur) + [TypeScript Vue Plugin (Volar)](https://marketplace.visualstudio.com/items?itemName=Vue.vscode-typescript-vue-plugin).
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vitejs.dev/config/).
-
-## Project Setup
+## Running the project locally for development
 
 ```sh
 npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
 npm run dev
 ```
 
-### Compile and Minify for Production
+### Generating static files to serve as webapp
 
 ```sh
 npm run build
-```
-
-### Lint with [ESLint](https://eslint.org/)
-
-```sh
-npm run lint
 ```

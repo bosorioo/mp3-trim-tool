@@ -1,7 +1,6 @@
 export function prefetchIcons (icons) {
   for (const icon of icons) {
     const url = `${import.meta.env.BASE_URL}icons/${icon}.svg`
-    console.log(import.meta.env.BASE_URL, url)
     const div = document.createElement('div')
     Object.assign(div.style, {
       position: 'fixed',
