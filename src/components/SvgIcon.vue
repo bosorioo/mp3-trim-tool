@@ -12,7 +12,7 @@ const props = defineProps({
 const rootEl = ref(null)
 
 const computedStyle = computed(() => {
-  const url = `url('/icons/${props.name}.svg')`
+  const url = `url('${import.meta.env.BASE_URL}icons/${props.name}.svg')`
   return {
     width: props.size + 'px',
     height: props.size + 'px',
