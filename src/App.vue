@@ -1,5 +1,5 @@
 <script setup>
-import { shallowRef, ref, nextTick, watch } from 'vue'
+import { shallowRef, ref, nextTick, watch, onMounted } from 'vue'
 import DragDropInput from './components/DragDropInput.vue'
 import SvgIcon from './components/SvgIcon.vue'
 import VolumeButton from './components/VolumeButton.vue'
@@ -33,6 +33,7 @@ const trimStartEl = ref(null)
 const trimEndEl = ref(null)
 const audioManager = shallowRef(null)
 const encodeProgress = shallowRef(null)
+const encodedObjectUrl = shallowRef(null)
 const isPlaying = shallowRef(false)
 const volume = localStorageRef(0, 'volume', v => Number(v) || 0)
 const isMuted = localStorageRef(false, 'muted', v => /true/.test(v))
@@ -42,7 +43,9 @@ const currentTime = shallowRef(-1)
 
 const rendererOptions = {
   paddingX: 16,
-  plotColor: (ctx, canvas, sampleIndex) => {
+  trimTimeStart: undefined,
+  trimTimeEnd: undefined,
+  plotColor: (ctx, canvas, details = {}) => {
     if (!canvas.sampleColorGradient) {
       const amplitude = 40
       const mid = Math.floor(canvas.height * 0.5)
@@ -53,13 +56,9 @@ const rendererOptions = {
       gradient.addColorStop(1, colors[0])
       canvas.sampleColorGradient = gradient
     }
-    const { duration, length } = audioManager.value.audioBuffer
-    const { start, end } = timeTrim.value
-    const sampleOnFrom = start / duration * length
-    const sampleOnTo = Math.min(end, duration) / duration * length
-    return sampleIndex >= sampleOnFrom && sampleIndex <= sampleOnTo
-      ? canvas.sampleColorGradient
-      : '#fcedff'
+    return details.trimmed
+      ? '#fcedff'
+      : canvas.sampleColorGradient
   }
 }
 
@@ -160,16 +159,20 @@ function updateSeekBarPosition () {
 
 async function onUploadFiles (files) {
   fileInfo.value = files[0]
+
   const fileBuffer = await getFileArrayBuffer(files[0])
   const manager = new AudioManager()
   await manager.decodeBuffer(fileBuffer)
 
   window.manager = manager
   isPlaying.value = manager.isPlaying
-  currentTime.value = -1
   timeTrim.value = { start: 0, end: Infinity }
   currentTime.value = 0
   fadeEffect.value = { start: 0, end: 0 }
+  if (encodedObjectUrl.value) {
+    URL.revokeObjectURL(encodedObjectUrl.value)
+    encodedObjectUrl.value = null
+  }
   manager.setGain(volume.value)
   manager.setMute(isMuted.value)
   manager.addOnEndCallback(() => { onClickStop() })
@@ -227,11 +230,17 @@ function onClickEncode () {
     const { data } = event
     if (data) {
       if ('progress' in data) {
-        encodeProgress.value = data.progress * 100
+        encodeProgress.value = data.progress
       }
-      if ('objectUrl' in data) {
-        clickHrefAsAnchor(data.objectUrl)
+      if ('encodedBuffer' in data) {
+        if (encodedObjectUrl.value) {
+          URL.revokeObjectURL(encodedObjectUrl.value)
+        }
+        const blob = new Blob([ data.encodedBuffer ], { type: 'audio/mp3' })
+        const objectUrl = URL.createObjectURL(blob)
+        encodedObjectUrl.value = objectUrl
         encodeProgress.value = null
+        encoderWorker.terminate()
       }
     }
   }
@@ -245,9 +254,22 @@ function onClickEncode () {
   }, audioBufferTransferable.buffers)
 }
 
+function onClickDownload () {
+  if (encodedObjectUrl.value) {
+    const fileName = fileInfo.value.name
+    clickHrefAsAnchor(encodedObjectUrl.value, fileName)
+  }
+}
+
 function onClickClose () {
   audioManager.value.close()
   audioManager.value = null
+}
+
+function onWindowResize () {
+  updateSeekBarPosition()
+  updateSeekHint()
+  updateTrimHint()
 }
 
 watch(() => volume.value, () => {
@@ -263,12 +285,16 @@ watch(() => isMuted.value, () => {
 }, { immediate: true })
 
 watch(() => timeTrim.value, () => {
-  if (canvasEl.value && audioManager.value) {
-    AudioManager.renderAudioBufferToCanvas(canvasEl.value, audioManager.value.audioBuffer, rendererOptions)
+  if (currentTime.value < timeTrim.value.start || currentTime.value > timeTrim.value.end) {
+    const newTime = Math.max(timeTrim.value.start, Math.min(currentTime.value, timeTrim.value.end))
+    currentTime.value = newTime
+    seekAudio(undefined, newTime)
   }
   updateTrimHint()
   updateSeekBarPosition()
-}, { deep: true })
+  rendererOptions.trimTimeStart = timeTrim.value.start
+  rendererOptions.trimTimeEnd = timeTrim.value.end
+}, { deep: true, flush: 'pre' })
 
 watch(() => [ timeTrim.value, fadeEffect.value ], () => {
   if (audioManager.value) {
@@ -281,17 +307,23 @@ watch(() => [ timeTrim.value, fadeEffect.value ], () => {
       timeStart: Math.min(audioManager.value.audioBuffer.duration, timeTrim.value.end) - fadeEffect.value.end
     })
     if (canvasEl.value) {
-      AudioManager.renderAudioBufferToCanvas(canvasEl.value, audioManager.value.audioBuffer, rendererOptions)
+      AudioManager.renderAudioBufferToCanvas(canvasEl.value, audioManager.value.audioBuffer, {
+        ...rendererOptions,
+        forceWaveFormRender: true
+      })
     }
   }
 }, { deep: true })
 
-prefetchIcons([
-  'play',
-  'pause',
-  'plus-circle',
-  'minus-circle'
-])
+onMounted(() => {
+  prefetchIcons([
+    'play',
+    'pause',
+    'plus-circle',
+    'minus-circle'
+  ])
+  window.addEventListener('resize', onWindowResize)
+})
 </script>
 
 <template lang="pug">
@@ -325,17 +357,16 @@ main.column.p-y-3.items-center
           @mousedown.left="seekAudio($event.clientX)"
         ).full-width
         span.time-label {{ formatTimeToMMSSMS(currentTime) }}
-      div.actions__container.row.justify-between.full-width
-        div.row
-          div.column
-            div.column.m-l-7.items-center
-              span.white.weight-600.font-14.m-b-1 Trim options
-              TimeTrimInput(
-                v-model:start="timeTrim.start"
-                v-model:end="timeTrim.end"
-                :duration="audioManager.audioBuffer ? audioManager.audioBuffer.duration : 0"
-              )
-          div.column.m-l-9
+      div.actions__container.full-width
+        div.columnn.m-l-7
+          div.colum.items-center
+            span.white.weight-600.font-14.m-b-1 Trim options
+            TimeTrimInput(
+              v-model:start="timeTrim.start"
+              v-model:end="timeTrim.end"
+              :duration="audioManager.audioBuffer ? audioManager.audioBuffer.duration : 0"
+            )
+          div.column.m-t-6
             span.white.weight-600.font-14.m-b-2 Effects
             div.row.items-center
               div.column
@@ -345,11 +376,11 @@ main.column.p-y-3.items-center
                   button(
                     @click="changeFade('start', 1)"
                   ).m-l-1.mini-icon.round.flat.white
-                    SvgIcon(name="plus-circle" :size="16")
+                    SvgIcon(name="plus-circle" :size="19")
                   button(
                     @click="changeFade('start', -1)"
                   ).m-l-1.mini-icon.round.flat.white
-                    SvgIcon(name="minus-circle" :size="16")
+                    SvgIcon(name="minus-circle" :size="19")
               div.column.m-l-6
                 span.white.weight-600.font-12 Fade out
                 div.row.items-center.m-t-1
@@ -357,11 +388,11 @@ main.column.p-y-3.items-center
                   button(
                     @click="changeFade('end', 1)"
                   ).m-l-1.mini-icon.round.flat.white
-                    SvgIcon(name="plus-circle" :size="16")
+                    SvgIcon(name="plus-circle" :size="19")
                   button(
                     @click="changeFade('end', -1)"
                   ).m-l-1.mini-icon.round.flat.white
-                    SvgIcon(name="minus-circle" :size="16")
+                    SvgIcon(name="minus-circle" :size="19")
         div.column.items-center
           div.row
             button(@click="onClickPlayPause").icon.m-1
@@ -369,18 +400,23 @@ main.column.p-y-3.items-center
             button(@click="onClickStop").icon.m-1
               SvgIcon(name="stop" :size="40")
             VolumeButton(v-model:value="volume" v-model:muted="isMuted").m-1
-          div.m-t-7
+          div.m-t-7.column.items-center
             button(@click="onClickEncode" :disabled="!!encodeProgress").m-1
               template(v-if="encodeProgress === null")
                 | Encode
               template(v-else)
-                | Encoding... ({{ encodeProgress.toFixed(2) }}%)
+                | Encoding... ({{ encodeProgress }}%)
+            button(
+              v-if="encodedObjectUrl"
+              @click="onClickDownload"
+            ).m-t-3
+              | Download encoded mp3
         div
   div.flex-8
 </template>
 
 <style lang="stylus" scoped>
-$back-mid-color = #5270bd // #c3eaff
+$back-mid-color = #5270bd
 $center-margin-color = lighten($back-mid-color, 15%)
 
 header
@@ -475,10 +511,10 @@ $trim-color = #49e
   font-weight 500
 
 .fade-duration-label
-  min-width 24px
+  min-width 28px
 
 .actions__container
-  > div
-    width 0
-    flex-grow 1
+  display grid
+  grid-template-columns 1fr 1fr 1fr
+  grid-column-gap 24px
 </style>

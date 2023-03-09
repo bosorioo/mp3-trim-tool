@@ -2,25 +2,26 @@ import lamejs from 'lamejs'
 
 export class AudioManager {
 
-  static applyExponentialGainToBuffer (audioBuffer, timeStart, duration = 6, rising = true) {
-    timeStart = Math.max(0, Math.min(timeStart, audioBuffer.duration))
-    duration = Math.min(duration, audioBuffer.duration - timeStart)
+  static applyExponentialGainToChannels (audioBuffersData, timeStart, duration = 6, rising = true) {
     if (duration <= 0) {
       return
     }
+    const { src, dst, totalDuration } = audioBuffersData
     const timeEnd = timeStart + duration
-    const sampleIndexStartPct = Math.max(0, Math.min(timeStart / audioBuffer.duration, 1))
-    const sampleIndexEndPct = Math.max(0, Math.min(timeEnd / audioBuffer.duration, 1))
-    for (let channelIndex = 0; channelIndex < audioBuffer.numberOfChannels; channelIndex++) {
-      const samples = audioBuffer.getChannelData(channelIndex)
-      const indexFrom = Math.floor(samples.length * sampleIndexStartPct)
-      const indexTo = Math.floor(samples.length * sampleIndexEndPct)
+    const sampleIndexStartPct = Math.max(0, Math.min(timeStart / totalDuration, 1))
+    const sampleIndexEndPct = Math.max(0, Math.min(timeEnd / totalDuration, 1))
+    const channelsCount = Math.min(src.length, dst.length)
+    const samplesLength = Math.min(src[0].length, dst[0].length)
+    for (let channelIndex = 0; channelIndex < channelsCount; channelIndex++) {
+      const samplesSrc = src[channelIndex]
+      const samplesDst = dst[channelIndex]
+      const indexFrom = Math.floor(samplesLength * sampleIndexStartPct)
+      const indexTo = Math.floor(samplesLength * sampleIndexEndPct)
       for (let index = indexFrom; index <= indexTo; index++) {
-        const t = (index - indexFrom) / (indexTo - indexFrom)
+        const t = (index - indexFrom) / (indexTo - indexFrom + 1)
         const factor = Math.sin(t * Math.PI / 2)
-        samples[index] = samples[index] * (rising ? factor : 1 - factor)
+        samplesDst[index] = samplesSrc[index] * (rising ? factor : 1 - factor)
       }
-      audioBuffer.copyToChannel(samples, channelIndex)
     }
   }
 
@@ -37,51 +38,89 @@ export class AudioManager {
     return result
   }
 
+  static getAudioBufferChannelsSamples (audioBuffer) {
+    const channels = new Array(audioBuffer.numberOfChannels)
+      .fill(0)
+      .map((_, index) => audioBuffer.getChannelData(index).slice())
+    return channels
+  }
+
   static renderAudioBufferToCanvas (canvas, audioBuffer, options = {}) {
     const {
       plotColor = '#3d5',
       paddingX = 0,
-      amplitudeFactor = 0.5
+      amplitudeFactor = 0.5,
+      trimTimeStart = 0,
+      trimTimeEnd = Infinity,
+      forceWaveFormRender = false
     } = options
-    const ctx = canvas.getContext('2d')
     const width = canvas.width - 2 * paddingX
     const height = canvas.height
     const midY = height >> 1
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.lineWidth = 1
-    const samples = [
-      audioBuffer.getChannelData(0),
-      audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : []
-    ]
-    let max = 1
-    // for (let index = 0; index < audioBuffer.length; index++) {
-    //   max = Math.max(
-    //     Math.abs(samples[0][index]),
-    //     Math.abs(samples[1][index] || 0),
-    //     max
-    //   )
-    // }
     const ampMax = Math.max(Math.floor(height * amplitudeFactor), 20)
-    const halfWindowSize = ((audioBuffer.length / width) >> 2) - 1
-    for (let x = 0; x < width; x++) {
-      const pctX = x / width
-      const sampleIndexBase = Math.floor(pctX * audioBuffer.length)
-      const sampleIndexFrom = Math.max(0, sampleIndexBase - halfWindowSize)
-      const sampleIndexTo = Math.min(audioBuffer.length - 1, sampleIndexBase + halfWindowSize)
-      let sampleValueTop = 0
-      for (let sampleIndex = sampleIndexFrom; sampleIndex <= sampleIndexTo; sampleIndex++) {
-        sampleValueTop += Math.abs(samples[0][sampleIndex])
-      }
-      sampleValueTop /= sampleIndexTo - sampleIndexFrom + 1
-      const ampTop = Math.max(1, Math.floor((sampleValueTop / max) * ampMax))
-      ctx.strokeStyle = typeof plotColor === 'function'
-        ? plotColor(ctx, canvas, sampleIndexBase)
-        : plotColor
-      ctx.beginPath()
-      ctx.moveTo(x + paddingX, midY + ampTop)
-      ctx.lineTo(x + paddingX, midY - ampTop)
-      ctx.stroke()
+
+    let cachedWaveFormImage = canvas._cachedWaveFormImage
+    let renderWaveForm = forceWaveFormRender
+
+    if (!cachedWaveFormImage) {
+      cachedWaveFormImage = document.createElement('canvas')
+      canvas._cachedWaveFormImage = cachedWaveFormImage
+      cachedWaveFormImage.width = canvas.width
+      cachedWaveFormImage.height = canvas.height
+      renderWaveForm = true
     }
+
+    if (renderWaveForm) {
+      const cacheCtx = cachedWaveFormImage.getContext('2d')
+      cacheCtx.clearRect(0, 0, canvas.width, canvas.height)
+      cacheCtx.lineWidth = 1
+      cacheCtx.strokeStyle = 'white'
+      const samples = audioBuffer.getChannelData(0)
+      const max = 1
+
+      const halfWindowSize = Math.min(150, ((audioBuffer.length / width) >> 2) - 1)
+      for (let x = 0; x < width; x++) {
+        const pctX = x / width
+        const sampleIndexBase = Math.floor(pctX * audioBuffer.length)
+        const sampleIndexFrom = Math.max(0, sampleIndexBase - halfWindowSize)
+        const sampleIndexTo = Math.min(audioBuffer.length - 1, sampleIndexBase + halfWindowSize)
+        let sampleValueTop = 0
+        for (let sampleIndex = sampleIndexFrom; sampleIndex <= sampleIndexTo; sampleIndex++) {
+          sampleValueTop += Math.abs(samples[sampleIndex])
+        }
+        sampleValueTop /= sampleIndexTo - sampleIndexFrom + 1
+        const ampTop = Math.max(1, Math.floor((sampleValueTop / max) * ampMax))
+        cacheCtx.beginPath()
+        cacheCtx.moveTo(x + paddingX, midY + ampTop)
+        cacheCtx.lineTo(x + paddingX, midY - ampTop)
+        cacheCtx.stroke()
+      }
+    }
+
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(cachedWaveFormImage, 0, 0)
+    const globalCompositeOperation = ctx.globalCompositeOperation
+    ctx.globalCompositeOperation = 'source-atop'
+
+    const trimmedColorValue = typeof plotColor === 'function'
+      ? plotColor(ctx, canvas, { trimmed: true })
+      : plotColor
+
+    const plotColorValue = typeof plotColor === 'function'
+      ? plotColor(ctx, canvas, { trimmed: false })
+      : plotColor
+
+    const { duration } = audioBuffer
+    const plotColorStartX = Math.floor(trimTimeStart / duration * width)
+    const plotColorEndX = Math.ceil(Math.min(trimTimeEnd, duration) / duration * width)
+
+    ctx.fillStyle = trimmedColorValue
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.fillStyle = plotColorValue
+    ctx.fillRect(paddingX + plotColorStartX, 0, plotColorEndX - plotColorStartX, canvas.height)
+
+    ctx.globalCompositeOperation = globalCompositeOperation
   }
 
   static audioBufferToMp3Chunks (audioBuffer, options = {}) {
@@ -146,8 +185,8 @@ export class AudioManager {
 
   constructor () {
     this.context = new AudioContext()
-    this.audioBufferOriginal = null
     this.audioBuffer = null
+    this.channelsData = null
 
     this.gain = new GainNode(this.context)
     this.gain.connect(this.context.destination)
@@ -167,15 +206,9 @@ export class AudioManager {
     return new Promise((resolve, reject) => {
       try {
         this.context.decodeAudioData(arrayBuffer, (audioBuffer) => {
-          this.audioBufferOriginal = audioBuffer
           this.audioBuffer = audioBuffer
-          for (let channelIndex = 0; channelIndex < audioBuffer.numberOfChannels; channelIndex++) {
-            const samples = audioBuffer.getChannelData(channelIndex)
-            for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex++) {
-              samples[sampleIndex] = samples[sampleIndex] * 1
-            }
-            audioBuffer.copyToChannel(samples, channelIndex)
-          }
+          this.channelsDataOriginal = AudioManager.getAudioBufferChannelsSamples(audioBuffer)
+          this.channelsData = AudioManager.getAudioBufferChannelsSamples(audioBuffer)
           resolve(audioBuffer)
         }, reject)
       } catch (err) {
@@ -186,33 +219,42 @@ export class AudioManager {
 
   addEffect (type, params) {
     let effect = this.effects.find(eff => eff.type === type)
-    let applyAllEffects = false
-    let mustClone = false
 
-    if (effect) {
-      mustClone = true
-    } else {
+    if (!effect) {
       effect = { type }
       this.effects.push(effect)
     }
 
-    Object.assign(effect, params)
-
-    if (mustClone || this.audioBuffer === this.audioBufferOriginal) {
-      this.audioBuffer = AudioManager.cloneAudioBuffer(this.audioBufferOriginal)
-      applyAllEffects = true
+    let hasChanges = false
+    for (const key in effect) {
+      if (effect[key] !== params[key]) {
+        hasChanges = true
+        break
+      }
+    }
+    if (!hasChanges) {
+      return
     }
 
-    const effectsToApply = applyAllEffects ? this.effects : [ effect ]
-    for (const effect of effectsToApply) {
+    Object.assign(effect, params)
+
+    for (const effect of this.effects) {
       if (/^fade(In|Out)$/.test(effect.type)) {
-        AudioManager.applyExponentialGainToBuffer(
-          this.audioBuffer,
-          effect.timeStart || 0,
+        AudioManager.applyExponentialGainToChannels(
+          {
+            dst: this.channelsData,
+            src: this.channelsDataOriginal,
+            totalDuration: this.audioBuffer.duration
+          },
+          effect.timeStart,
           effect.duration,
           effect.type === 'fadeIn'
         )
       }
+    }
+
+    for (let channelIndex = 0; channelIndex < this.channelsData.length; channelIndex++) {
+      this.audioBuffer.copyToChannel(this.channelsData[channelIndex], channelIndex)
     }
 
     this.start(this.getCurrentTime(), this.isPlaying)

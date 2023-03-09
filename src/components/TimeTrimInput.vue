@@ -181,12 +181,12 @@ div(ref="rootEl").row.root.items-center
       border-top-color #ddd
 
 .arrow-up
-  border-bottom solid 8px white
-  border-left solid 4px transparent
-  border-right solid 4px transparent
+  border-bottom solid 10px white
+  border-left solid 5px transparent
+  border-right solid 5px transparent
 
 .arrow-down
-  border-top solid 8px white
-  border-left solid 4px transparent
-  border-right solid 4px transparent
+  border-top solid 10px white
+  border-left solid 5px transparent
+  border-right solid 5px transparent
 </style>
