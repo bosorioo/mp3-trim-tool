@@ -9,6 +9,7 @@ import { localStorageRef } from './modules/local-storage-ref.js'
 import { AudioManager, AudioBufferClone } from './modules/audio-manager.js'
 import { clickHrefAsAnchor } from './modules/download.js'
 import { prefetchIcons } from './modules/prefetch-icons.js'
+import { useDraggableEl } from './modules/draggable.js'
 import EncoderWorker from './modules/encoder.worker.js?worker'
 
 function getFileArrayBuffer (file) {
@@ -112,7 +113,7 @@ function updateSeekHint (x) {
   span.textContent = formatTimeToMMSSMS(time)
   span.style.setProperty('--pos-pct', spanPosPct.toFixed(2))
 
-  parent.style.setProperty('--pos', Math.floor(seekContainerLeft) + 'px')
+  parent.style.setProperty('--pos', Math.round(seekContainerLeft) + 'px')
 }
 
 function updateTrimHint () {
@@ -157,6 +158,39 @@ function updateSeekBarPosition () {
   el.style.setProperty('--progress', `${value}px`)
 }
 
+function seekAudio (x, time) {
+  if (!time) {
+    const seekPosition = getSeekPositionInfoFromX(x)
+    time = seekPosition.time
+  }
+  time = Math.max(timeTrim.value.start, Math.min(time, timeTrim.value.end))
+  audioManager.value.start(time, audioManager.value.isPlaying)
+}
+
+function changeFade (type, delta) {
+  fadeEffect.value[type] = Math.max(0, fadeEffect.value[type] + delta)
+}
+
+useDraggableEl(trimStartEl, {
+  onDrag ({ x }) {
+    const seekPosition = getSeekPositionInfoFromX(x)
+    timeTrim.value.start = seekPosition.time
+  },
+  onClick () {
+    seekAudio(0)
+  }
+})
+
+useDraggableEl(trimEndEl, {
+  onDrag ({ x }) {
+    const seekPosition = getSeekPositionInfoFromX(x)
+    timeTrim.value.end = seekPosition.time
+  },
+  onClick () {
+    seekAudio(Infinity)
+  }
+})
+
 async function onUploadFiles (files) {
   fileInfo.value = files[0]
 
@@ -194,19 +228,6 @@ async function onUploadFiles (files) {
   }, 25)
 
   updateTrimHint()
-}
-
-function seekAudio (x, time) {
-  if (!time) {
-    const seekPosition = getSeekPositionInfoFromX(x)
-    time = seekPosition.time
-  }
-  time = Math.max(timeTrim.value.start, Math.min(time, timeTrim.value.end))
-  audioManager.value.start(time, audioManager.value.isPlaying)
-}
-
-function changeFade (type, delta) {
-  fadeEffect.value[type] = Math.max(0, fadeEffect.value[type] + delta)
 }
 
 function onClickPlayPause () {
@@ -272,19 +293,19 @@ function onWindowResize () {
   updateTrimHint()
 }
 
-watch(() => volume.value, () => {
+watch(volume, () => {
   if (audioManager.value) {
     audioManager.value.setGain(volume.value)
   }
 })
 
-watch(() => isMuted.value, () => {
+watch(isMuted, () => {
   if (audioManager.value) {
     audioManager.value.setMute(isMuted.value)
   }
 }, { immediate: true })
 
-watch(() => timeTrim.value, () => {
+watch(timeTrim, () => {
   if (currentTime.value < timeTrim.value.start || currentTime.value > timeTrim.value.end) {
     const newTime = Math.max(timeTrim.value.start, Math.min(currentTime.value, timeTrim.value.end))
     currentTime.value = newTime
@@ -296,13 +317,15 @@ watch(() => timeTrim.value, () => {
   rendererOptions.trimTimeEnd = timeTrim.value.end
 }, { deep: true, flush: 'pre' })
 
-watch(() => [ timeTrim.value, fadeEffect.value ], () => {
+watch([ timeTrim, fadeEffect ], () => {
   if (audioManager.value) {
-    audioManager.value.addEffect('fadeIn', {
+    audioManager.value.addEffect({
+      type: 'fadeIn',
       duration: fadeEffect.value.start,
       timeStart: timeTrim.value.start
     })
-    audioManager.value.addEffect('fadeOut', {
+    audioManager.value.addEffect({
+      type: 'fadeOut',
       duration: fadeEffect.value.end,
       timeStart: Math.min(audioManager.value.audioBuffer.duration, timeTrim.value.end) - fadeEffect.value.end
     })
@@ -451,6 +474,8 @@ main
   user-select none
   *
     user-select none
+  canvas
+    cursor crosshair
   &::after
     content ''
     position absolute
@@ -474,6 +499,7 @@ main
   border-top solid 8px white
   border-left solid 10px transparent
   border-right solid 10px transparent
+  pointer-events none
   span
     color white
     font-weight 600
@@ -491,6 +517,7 @@ $trim-color = #49e
   width 8px
   height $trim-height-pct
   top (100% - $trim-height-pct) * 0.5
+  cursor ew-resize
 
 .trim-start
   border-radius 8px 0 0 8px
@@ -503,6 +530,7 @@ $trim-color = #49e
 .time-label
   position absolute
   text-align center
+  pointer-events none
   left 0
   right 0
   bottom 10px

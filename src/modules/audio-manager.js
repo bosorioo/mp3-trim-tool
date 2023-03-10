@@ -217,26 +217,25 @@ export class AudioManager {
     })
   }
 
-  addEffect (type, params) {
-    let effect = this.effects.find(eff => eff.type === type)
+  addEffect (effectData) {
+    let effect = this.effects.find(eff => eff.type === effectData.type)
 
-    if (!effect) {
-      effect = { type }
-      this.effects.push(effect)
-    }
-
-    let hasChanges = false
-    for (const key in effect) {
-      if (effect[key] !== params[key]) {
-        hasChanges = true
-        break
+    if (effect) {
+      let hasChanges = false
+      for (const key in effect) {
+        if (effect[key] !== effectData[key]) {
+          hasChanges = true
+          break
+        }
       }
+      if (!hasChanges) {
+        return false
+      }
+      Object.assign(effect, effectData)
+    } else {
+      effect = effectData
+      this.effects.push(effectData)
     }
-    if (!hasChanges) {
-      return
-    }
-
-    Object.assign(effect, params)
 
     for (const effect of this.effects) {
       if (/^fade(In|Out)$/.test(effect.type)) {
@@ -258,6 +257,7 @@ export class AudioManager {
     }
 
     this.start(this.getCurrentTime(), this.isPlaying)
+    return true
   }
 
   addOnEndCallback (callback) {

@@ -97,7 +97,7 @@ const timeLabels = computed(() => {
     .map(row => row.map(s => String(s).padStart(2, '0')))
 })
 
-watch(() => selectionIndex.value, (newValue) => {
+watch(selectionIndex, (newValue) => {
   if (newValue !== null) {
     selectEl(newValue)
   }
