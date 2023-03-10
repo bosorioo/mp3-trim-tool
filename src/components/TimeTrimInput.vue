@@ -45,7 +45,7 @@ function selectEl (el) {
     selection.removeAllRanges()
     selection.addRange(range)
   } else if (document.selection && document.body.createTextRange) {
-    range = document.body.createTextRange()
+    const range = document.body.createTextRange()
     range.moveToElementText(el)
     range.select()
   }
@@ -94,7 +94,7 @@ const timeLabels = computed(() => {
     [ labelsStart.mm, labelsStart.ss, Math.round(labelsStart.ms / 10) ],
     [ labelsEnd.mm, labelsEnd.ss, Math.round(labelsEnd.ms / 10) ]
   ]
-    .map(row => row.map((s, index) => String(s).padStart(2, '0')))
+    .map(row => row.map(s => String(s).padStart(2, '0')))
 })
 
 watch(() => selectionIndex.value, (newValue) => {

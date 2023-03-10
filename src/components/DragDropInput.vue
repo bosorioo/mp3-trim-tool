@@ -5,7 +5,6 @@ const emit = defineEmits([
   'upload'
 ])
 
-const isDragging = ref(false)
 const dragEnterCounter = ref(0)
 
 const props = defineProps({
@@ -84,7 +83,7 @@ function onDrop (event) {
     const extensions = props.extensions
       .split(',')
       .map(v => v.replace(/(^\.|\s+)/g, ''))
-    const regex = new RegExp(`\.(${extensions.join('|')})$`, 'i')
+    const regex = new RegExp(`\\.(${extensions.join('|')})$`, 'i')
     files = files.filter(f => regex.test(f.name))
   }
   if (files.length > 0) {

@@ -24,7 +24,6 @@ const emit = defineEmits([
   'update:muted'
 ])
 
-const sliderEl = ref(null)
 const sliderButtonEl = ref(null)
 const sliderTrackEl = ref(null)
 const buttonIcon = ref('volume-high')
@@ -103,10 +102,7 @@ div(:class="{ sliding: isSliding }").root.row.relative
     SvgIcon(:name="buttonIcon" :size="size")
   div.spacer
   div.slider__anim-container.absolute
-    div(
-      ref="sliderEl"
-      :style="{ '--progress': value }"
-    ).slider__container
+    div(:style="{ '--progress': value }").slider__container
       div(
         ref="sliderTrackEl"
         @mousedown.left="onMouseDownSlider"

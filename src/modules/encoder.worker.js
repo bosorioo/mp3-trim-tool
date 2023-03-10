@@ -10,6 +10,7 @@ function encodeAudioBuffer (buffer, options) {
       globalThis.postMessage({ progress })
     }
   }
+
   const chunks = AudioManager.audioBufferToMp3Chunks(buffer, { ...options, onProgress })
   const arrayLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0)
   const ArrayClass = chunks[0].constructor
