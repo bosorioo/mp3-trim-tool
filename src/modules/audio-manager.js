@@ -237,6 +237,12 @@ export class AudioManager {
       this.effects.push(effectData)
     }
 
+    for (let channelIndex = 0; channelIndex < this.channelsData.length; channelIndex++) {
+      const src = this.channelsDataOriginal[channelIndex]
+      const dst = this.channelsData[channelIndex]
+      dst.set(src)
+    }
+
     for (const effect of this.effects) {
       if (/^fade(In|Out)$/.test(effect.type)) {
         AudioManager.applyExponentialGainToChannels(
