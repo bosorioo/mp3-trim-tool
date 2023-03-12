@@ -145,6 +145,7 @@ input
   cursor pointer
   position relative
   background #f6f6f6
+  text-align center
   .drag-label
     opacity 0
     position absolute
