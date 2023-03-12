@@ -538,6 +538,7 @@ $trim-color = #49e
   height $trim-height-pct
   top (100% - $trim-height-pct) * 0.5
   cursor ew-resize
+  z-index 3
 
 .trim-start
   border-radius 8px 0 0 8px
