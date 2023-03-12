@@ -14,13 +14,35 @@ export function useDraggableEl (elRef, options = {}) {
   let dragStartY
   let isWithinClickDistance
 
+  const elTriggerEvents = [ 'touchstart', 'mousedown' ]
+  const windowEvents = [ 'blur', 'mouseup', 'mousemove', 'touchmove', 'touchend', 'touchcancel' ]
+  const applyWindowEvents = (register = true) => {
+    windowEvents.forEach(event => {
+      if (register) {
+        window.addEventListener(event, onEvent, { capture: true })
+      } else {
+        window.removeEventListener(event, onEvent, { capture: true })
+      }
+    })
+  }
+
   const onEvent = (event) => {
-    if (event.which !== buttonWhich) {
+    let { clientX, clientY } = event
+    if (/mouse/.test(event.type) && event.which !== buttonWhich) {
       return
+    } else if (/touch/.test(event.type)) {
+      if (!/touch(end|cancel)/.test(event.type) && event.targetTouches.length !== 1) {
+        return
+      }
+      const targetTouch = event.targetTouches[0]
+      if (targetTouch) {
+        clientX = targetTouch.clientX
+        clientY = targetTouch.clientY
+      }
     }
-    if (event.type === 'mousemove') {
-      const x = event.clientX
-      const y = event.clientY
+    if (/(touch|mouse)move/.test(event.type)) {
+      const x = clientX
+      const y = clientY
       const dragDistanceX = Math.abs(x - dragStartX)
       const dragDistanceY = Math.abs(y - dragStartY)
       const dragDistance = Math.sqrt(dragDistanceX * dragDistanceX + dragDistanceY * dragDistanceY)
@@ -38,19 +60,17 @@ export function useDraggableEl (elRef, options = {}) {
           dragStartY
         })
       }
-    } else if (event.type === 'mousedown') {
-      dragStartX = event.clientX
-      dragStartY = event.clientY
+    } else if (elTriggerEvents.includes(event.type)) {
+      dragStartX = clientX
+      dragStartY = clientY
       isWithinClickDistance = true
-      window.addEventListener('mouseup', onEvent, { capture: true })
-      window.addEventListener('mousemove', onEvent, { capture: true })
-      window.addEventListener('blur', onEvent)
+      applyWindowEvents()
       if (typeof onDragStart === 'function') {
         onDragStart({ dragStartX, dragStartY })
       }
-    } else if (event.type === 'mouseup') {
+    } else if (/(touch(end|cancel)|mouseup)/.test(event.type)) {
       if (typeof onDragStop === 'function') {
-        onDragStop({ x: event.clientX, y: event.clientY })
+        onDragStop({ x: clientX, y: clientY })
       }
       if (isWithinClickDistance && typeof onClick === 'function') {
         onClick()
@@ -66,11 +86,11 @@ export function useDraggableEl (elRef, options = {}) {
 
   const cleanup = (el) => {
     if (el) {
-      el.removeEventListener('mousedown', onEvent)
+      elTriggerEvents.forEach(event => {
+        el.removeEventListener(event, onEvent)
+      })
     }
-    window.removeEventListener('mouseup', onEvent, { capture: true })
-    window.removeEventListener('mousemove', onEvent, { capture: true })
-    window.removeEventListener('blur', onEvent)
+    applyWindowEvents(false)
   }
 
   watch(elRef, (newValue, oldValue) => {
@@ -78,7 +98,9 @@ export function useDraggableEl (elRef, options = {}) {
       cleanup(oldValue)
     }
     if (newValue) {
-      newValue.addEventListener('mousedown', onEvent)
+      elTriggerEvents.forEach(event => {
+        newValue.addEventListener(event, onEvent)
+      })
     }
   })
 

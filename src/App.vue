@@ -110,10 +110,13 @@ function updateSeekHint (x) {
   const { parent, time, seekContainerLeft, spanPosPct } = getSeekPositionInfoFromX(x)
   const span = seekHintEl.value.firstElementChild
 
-  span.textContent = formatTimeToMMSSMS(time)
-  span.style.setProperty('--pos-pct', spanPosPct.toFixed(2))
-
-  parent.style.setProperty('--pos', Math.round(seekContainerLeft) + 'px')
+  if (Number.isNaN(time)) {
+    parent.style.setProperty('--pos', '-100px')
+  } else {
+    span.textContent = formatTimeToMMSSMS(time)
+    span.style.setProperty('--pos-pct', spanPosPct.toFixed(2))
+    parent.style.setProperty('--pos', Math.round(seekContainerLeft) + 'px')
+  }
 }
 
 function updateTrimHint () {
@@ -464,6 +467,8 @@ main
 
 .file__label
   color white
+  text-align center
+  max-width 65vw
 
 .drag-drop
   width 32vw
@@ -472,6 +477,21 @@ main
 .canvas__container
   position relative
   user-select none
+  transform-origin center
+  @media(max-width: 800px)
+    margin-top 12px
+    margin-bottom 32px
+    .time-label
+      bottom -32px
+    canvas
+        transform scaleY(2.5)
+  @media(max-width: 560px)
+    margin-top 12px
+    margin-bottom 32px
+    .time-label
+      bottom -32px
+    canvas
+      transform scaleY(3.0)
   *
     user-select none
   canvas
@@ -545,4 +565,11 @@ $trim-color = #49e
   display grid
   grid-template-columns 1fr 1fr 1fr
   grid-column-gap 24px
+  @media(max-width: 800px)
+    display flex
+    flex-direction column-reverse
+    align-items center
+    > *
+      margin-left 0
+      margin-bottom 24px
 </style>
