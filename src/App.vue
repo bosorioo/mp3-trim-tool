@@ -1,5 +1,5 @@
 <script setup>
-import { shallowRef, ref, nextTick, watch, onMounted } from 'vue'
+import { shallowRef, ref, nextTick, watch, onMounted, computed } from 'vue'
 import DragDropInput from './components/DragDropInput.vue'
 import SvgIcon from './components/SvgIcon.vue'
 import VolumeButton from './components/VolumeButton.vue'
@@ -10,6 +10,7 @@ import { AudioManager, AudioBufferClone } from './modules/audio-manager.js'
 import { clickHrefAsAnchor } from './modules/download.js'
 import { prefetchIcons } from './modules/prefetch-icons.js'
 import { useDraggableEl } from './modules/draggable.js'
+import { debounce } from './modules/debounce.js'
 import EncoderWorker from './modules/encoder.worker.js?worker'
 
 function getFileArrayBuffer (file) {
@@ -41,6 +42,11 @@ const isMuted = localStorageRef(false, 'muted', v => /true/.test(v))
 const timeTrim = ref({ start: 0, end: Infinity })
 const fadeEffect = ref({ start: 0, end: 0 })
 const currentTime = shallowRef(-1)
+const totalTime = computed(() => {
+  const totalTime = audioManager.value && audioManager.value.audioBuffer &&
+    audioManager.value.audioBuffer.duration
+  return totalTime
+})
 
 const rendererOptions = {
   paddingX: 16,
@@ -167,6 +173,7 @@ function seekAudio (x, time) {
     time = seekPosition.time
   }
   time = Math.max(timeTrim.value.start, Math.min(time, timeTrim.value.end))
+  time = Math.max(0, Math.min(time, totalTime.value))
   audioManager.value.start(time, audioManager.value.isPlaying)
 }
 
@@ -177,7 +184,10 @@ function changeFade (type, delta) {
 useDraggableEl(trimStartEl, {
   onDrag ({ x }) {
     const seekPosition = getSeekPositionInfoFromX(x)
-    timeTrim.value.start = seekPosition.time
+    timeTrim.value.start = Math.min(
+      seekPosition.time,
+      timeTrim.value.end
+    )
   },
   onClick () {
     seekAudio(0)
@@ -187,7 +197,10 @@ useDraggableEl(trimStartEl, {
 useDraggableEl(trimEndEl, {
   onDrag ({ x }) {
     const seekPosition = getSeekPositionInfoFromX(x)
-    timeTrim.value.end = seekPosition.time
+    timeTrim.value.end = Math.max(
+      seekPosition.time,
+      timeTrim.value.start
+    )
   },
   onClick () {
     seekAudio(Infinity)
@@ -320,6 +333,18 @@ watch(timeTrim, () => {
   rendererOptions.trimTimeEnd = timeTrim.value.end
 }, { deep: true, flush: 'pre' })
 
+const rerenderCanvasDebounced = debounce(() => {
+  if (canvasEl.value && audioManager.value) {
+    AudioManager.renderAudioBufferToCanvas(canvasEl.value, audioManager.value.audioBuffer, {
+      ...rendererOptions,
+      forceWaveFormRender: true
+    })
+  }
+}, {
+  delay: 25,
+  triggerCallLimit: 5
+})
+
 watch([ timeTrim, fadeEffect ], () => {
   if (audioManager.value) {
     audioManager.value.addEffect({
@@ -332,12 +357,7 @@ watch([ timeTrim, fadeEffect ], () => {
       duration: fadeEffect.value.end,
       timeStart: Math.min(audioManager.value.audioBuffer.duration, timeTrim.value.end) - fadeEffect.value.end
     })
-    if (canvasEl.value) {
-      AudioManager.renderAudioBufferToCanvas(canvasEl.value, audioManager.value.audioBuffer, {
-        ...rendererOptions,
-        forceWaveFormRender: true
-      })
-    }
+    rerenderCanvasDebounced()
   }
 }, { deep: true })
 
@@ -349,6 +369,22 @@ onMounted(() => {
     'minus-circle'
   ])
   window.addEventListener('resize', onWindowResize)
+  window.addEventListener('keydown', event => {
+    if (event.altKey || event.ctrlKey || event.shiftKey) {
+      return
+    }
+    if (event.code === 'Space') {
+      onClickPlayPause()
+    } else if (/Arrow(Up|Down)/.test(event.code)) {
+      const delta = 0.05 * (event.code === 'ArrowUp' ? 1 : -1)
+      volume.value = Math.max(0, Math.min(volume.value + delta, 1))
+    } else if (/Arrow(Right|Left)/.test(event.code)) {
+      const delta = 5 * (event.code === 'ArrowRight' ? 1 : -1)
+      seekAudio(undefined, currentTime.value + delta)
+    } else if (event.code === 'KeyM') {
+      isMuted.value = !isMuted.value
+    }
+  })
 })
 </script>
 
@@ -364,9 +400,11 @@ main.column.p-y-3.items-center
     ).drag-drop.p-y-5
   template(v-else)
     div.column.items-center.full-width.flex-1.relative
-      div.file__label
-        span File:&nbsp;
-        b {{ fileInfo.name }}
+      div.file__label.column.items-center
+        div
+          span File:&nbsp;
+          b {{ fileInfo.name }}
+        span Length: {{ formatTimeToMMSSMS(totalTime).slice(0, -3) }}
       button(@click="onClickClose").flat.icon.round.absolute.close-button.white
         SvgIcon(name="close-circle-outline" :size="32")
       div(
@@ -392,7 +430,7 @@ main.column.p-y-3.items-center
               v-model:end="timeTrim.end"
               :duration="audioManager.audioBuffer ? audioManager.audioBuffer.duration : 0"
             )
-          div.column.m-t-6
+          div.effects__container.column.m-t-6
             span.white.weight-600.font-14.m-b-2 Effects
             div.row.items-center
               div.column
@@ -504,6 +542,7 @@ main
     z-index 4
     border-left solid 1px white
     border-right solid 1px white
+    pointer-events none
     left var(--progress)
 
 .close-button
@@ -534,7 +573,7 @@ $trim-height-pct = 65%
 $trim-color = #49e
 .trim-start
 .trim-end
-  width 8px
+  width 10px
   height $trim-height-pct
   top (100% - $trim-height-pct) * 0.5
   cursor ew-resize
@@ -558,6 +597,10 @@ $trim-color = #49e
   color white
   user-select none
   font-weight 500
+
+.effects__container
+  *
+    user-select none
 
 .fade-duration-label
   min-width 28px

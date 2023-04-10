@@ -77,10 +77,12 @@ export function useDraggableEl (elRef, options = {}) {
       }
       cleanup()
     } else if (event.type === 'blur') {
-      if (typeof onDragStop === 'function') {
-        onDragStop({})
+      if (event.target === window) {
+        if (typeof onDragStop === 'function') {
+          onDragStop({})
+        }
+        cleanup()
       }
-      cleanup()
     }
   }
 

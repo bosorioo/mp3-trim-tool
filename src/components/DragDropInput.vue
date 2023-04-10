@@ -146,6 +146,7 @@ input
   position relative
   background #f6f6f6
   text-align center
+  user-select none
   .drag-label
     opacity 0
     position absolute
