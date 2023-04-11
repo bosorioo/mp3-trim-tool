@@ -26,9 +26,11 @@ export function debounce (cb, options = {}) {
       timeoutHandle = handle
     }
   }
+
   debounced.dispatch = function (...args) {
     debounced.callCount = 0
     return cb.apply(this, args)
   }
+
   return debounced
 }

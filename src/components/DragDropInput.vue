@@ -13,6 +13,7 @@ const props = defineProps({
     type: Boolean,
     default: true
   },
+  fullscreenDrop: Boolean,
   singleFile: {
     type: Boolean,
     default: false
@@ -117,7 +118,7 @@ div(
   @click="onClickUploadArea"
   @drop.prevent.stop="onDrop"
   @dragover.prevent.stop
-  :class="{ dragging: dragEnterCounter > 0, candrag: supportsDrop }"
+  :class="{ dragging: dragEnterCounter > 0, candrag: supportsDrop, fullscreen: fullscreenDrop }"
 ).upload-area
   span(
     v-html="uploadLabel"
@@ -166,6 +167,17 @@ input
       opacity 0
     .drag-label
       opacity 1
+    &.fullscreen
+      position fixed
+      z-index 9999
+      margin 4px
+      background rgba(209, 209, 209, 0.7)
+      top 0
+      left 0
+      right 0
+      bottom 0
+      width unset
+      height unset
 
   *
     pointer-events none

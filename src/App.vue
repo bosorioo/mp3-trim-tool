@@ -4,6 +4,7 @@ import DragDropInput from './components/DragDropInput.vue'
 import SvgIcon from './components/SvgIcon.vue'
 import VolumeButton from './components/VolumeButton.vue'
 import TimeTrimInput from './components/TimeTrimInput.vue'
+import OptionsSelector from './components/OptionsSelector.vue'
 
 import { localStorageRef } from './modules/local-storage-ref.js'
 import { AudioManager, AudioBufferClone } from './modules/audio-manager.js'
@@ -11,6 +12,7 @@ import { clickHrefAsAnchor } from './modules/download.js'
 import { prefetchIcons } from './modules/prefetch-icons.js'
 import { useDraggableEl } from './modules/draggable.js'
 import { debounce } from './modules/debounce.js'
+import * as easingFunctionsObj from './modules/easing-functions.js'
 import EncoderWorker from './modules/encoder.worker.js?worker'
 
 function getFileArrayBuffer (file) {
@@ -28,6 +30,13 @@ function getFileArrayBuffer (file) {
   })
 }
 
+const EASING_FUNCTIONS = [
+  { title: 'Sine', function: easingFunctionsObj.easeInSine },
+  { title: 'Circular', function: easingFunctionsObj.easeOutCirc },
+  { title: 'Exponential', function: easingFunctionsObj.easeOutExpo },
+  { title: 'Linear', function: easingFunctionsObj.easeLinear },
+]
+
 const fileInfo = ref(null)
 const canvasEl = ref(null)
 const seekHintEl = ref(null)
@@ -36,16 +45,25 @@ const trimEndEl = ref(null)
 const audioManager = shallowRef(null)
 const encodeProgress = shallowRef(null)
 const encodedObjectUrl = shallowRef(null)
+const isDecodingAudio = shallowRef(false)
+const selectedEasingFunctionName = localStorageRef('', 'ease-func')
+const isEasingFunctionSelectorOpen = shallowRef(false)
 const isPlaying = shallowRef(false)
 const volume = localStorageRef(0, 'volume', v => Number(v) || 0)
 const isMuted = localStorageRef(false, 'muted', v => /true/.test(v))
 const timeTrim = ref({ start: 0, end: Infinity })
 const fadeEffect = ref({ start: 0, end: 0 })
 const currentTime = shallowRef(-1)
+
 const totalTime = computed(() => {
-  const totalTime = audioManager.value && audioManager.value.audioBuffer &&
+  const duration = audioManager.value && audioManager.value.audioBuffer &&
     audioManager.value.audioBuffer.duration
-  return totalTime
+  return duration
+})
+
+const easingFunction = computed(() => {
+  const easeFunction = EASING_FUNCTIONS.find(({ title }) => title === selectedEasingFunctionName.value)
+  return easeFunction
 })
 
 const rendererOptions = {
@@ -210,9 +228,16 @@ useDraggableEl(trimEndEl, {
 async function onUploadFiles (files) {
   fileInfo.value = files[0]
 
-  const fileBuffer = await getFileArrayBuffer(files[0])
+  isDecodingAudio.value = true
   const manager = new AudioManager()
-  await manager.decodeBuffer(fileBuffer)
+
+  try {
+    await nextTick()
+    const fileBuffer = await getFileArrayBuffer(files[0])
+    await manager.decodeBuffer(fileBuffer)
+  } finally {
+    isDecodingAudio.value = false
+  }
 
   window.manager = manager
   isPlaying.value = manager.isPlaying
@@ -244,6 +269,14 @@ async function onUploadFiles (files) {
   }, 25)
 
   updateTrimHint()
+}
+
+function onClickPickEasingFunction () {
+  isEasingFunctionSelectorOpen.value = !isEasingFunctionSelectorOpen.value
+}
+
+function onSelectEasingFunction (item, index) {
+  selectedEasingFunctionName.value = item
 }
 
 function onClickPlayPause () {
@@ -361,6 +394,15 @@ watch([ timeTrim, fadeEffect ], () => {
   }
 }, { deep: true })
 
+watch([ audioManager, selectedEasingFunctionName ], (value) => {
+  const easingInfo = easingFunction.value || EASING_FUNCTIONS[0]
+  if (audioManager.value) {
+    audioManager.value.setEasingFunction(easingInfo.function)
+    audioManager.value.applyEffects()
+    rerenderCanvasDebounced()
+  }
+}, { immediate: true })
+
 onMounted(() => {
   prefetchIcons([
     'play',
@@ -393,15 +435,19 @@ header
   div MP3 Tool
 main.column.p-y-3.items-center
   div.flex-1
-  template(v-if="!audioManager")
+
+  template(v-if="isDecodingAudio")
+    div.m-t-5.text-white.font-24.text-bold.p-b-3.loading Decoding file...
+  template(v-else-if="!audioManager")
     DragDropInput(
       @upload="onUploadFiles"
       extensions=".mp3,.wav"
+      fullscreen-drop
     ).drag-drop.p-y-5
   template(v-else)
     div.column.items-center.full-width.flex-1.relative
-      div.file__label.column.items-center
-        div
+      div.file__label.column.items-center.m-b-2
+        div.m-b-1
           span File:&nbsp;
           b {{ fileInfo.name }}
         span Length: {{ formatTimeToMMSSMS(totalTime).slice(0, -3) }}
@@ -409,7 +455,7 @@ main.column.p-y-3.items-center
         SvgIcon(name="close-circle-outline" :size="32")
       div(
         @mousemove="updateSeekHint($event.clientX)"
-      ).canvas__container.full-width.m-t-2
+      ).canvas__container.full-width
         div(ref="seekHintEl").absolute.seek-hint
           span
         div(ref="trimStartEl").absolute.trim-start
@@ -421,9 +467,9 @@ main.column.p-y-3.items-center
           @mousedown.left="seekAudio($event.clientX)"
         ).full-width
         span.time-label {{ formatTimeToMMSSMS(currentTime) }}
-      div.actions__container.full-width
-        div.columnn.m-l-7
-          div.colum.items-center
+      div.actions__container.m-x-6
+        div.tools__container.column
+          div.column.items-start
             span.white.weight-600.font-14.m-b-1 Trim options
             TimeTrimInput(
               v-model:start="timeTrim.start"
@@ -431,7 +477,21 @@ main.column.p-y-3.items-center
               :duration="audioManager.audioBuffer ? audioManager.audioBuffer.duration : 0"
             )
           div.effects__container.column.m-t-6
-            span.white.weight-600.font-14.m-b-2 Effects
+            div.row.items-center.full-width.m-b-2
+              span.white.weight-600.font-14 Effects
+              button(
+                @click="onClickPickEasingFunction"
+              ).button-easing-function.white.outline.font-11.m-l-2.weight-600.flex-1
+                | {{ easingFunction ? `Easing: ${easingFunction.title}` : 'Pick easing function' }}
+              OptionsSelector(
+                v-model:open="isEasingFunctionSelectorOpen"
+                v-float="{ offset: 16 }"
+                v-slot="slotProps"
+                :items="EASING_FUNCTIONS.map(({ title }) => title)"
+                title="Select easing function"
+                @item-click="onSelectEasingFunction"
+              )
+                span {{ slotProps.item }}
             div.row.items-center
               div.column
                 span.white.weight-600.font-12 Fade in
@@ -464,7 +524,7 @@ main.column.p-y-3.items-center
             button(@click="onClickStop").icon.m-1
               SvgIcon(name="stop" :size="40")
             VolumeButton(v-model:value="volume" v-model:muted="isMuted").m-1
-          div.m-t-7.column.items-center
+          div.encode__container.column.items-center
             button(@click="onClickEncode" :disabled="!!encodeProgress").m-1
               template(v-if="encodeProgress === null")
                 | Encode
@@ -578,6 +638,15 @@ $trim-color = #49e
   top (100% - $trim-height-pct) * 0.5
   cursor ew-resize
   z-index 3
+  &::after
+    position absolute
+    content ''
+    pointer-events none
+    background radial-gradient(circle at 50% 42%, rgba(255,255,255,1) 0%, rgba(255,255,255,1) 2px, rgba(255,255,255,0) 3px, rgba(255,255,255,0) 100%),radial-gradient(circle at 50% 49%, rgba(255,255,255,1) 0%, rgba(255,255,255,1) 2px, rgba(255,255,255,0) 3px, rgba(255,255,255,0) 100%),radial-gradient(circle at 50% 56%, rgba(255,255,255,1) 0%, rgba(255,255,255,1) 2px, rgba(255,255,255,0) 3px, rgba(255,255,255,0) 100%)
+    top 0
+    bottom 0
+    left 0
+    right 0
 
 .trim-start
   border-radius 8px 0 0 8px
@@ -609,6 +678,11 @@ $trim-color = #49e
   display grid
   grid-template-columns 1fr 1fr 1fr
   grid-column-gap 24px
+  align-self stretch
+  >:first-child
+    justify-self flex-start
+  >:last-child
+    justify-self flex-end
   @media(max-width: 800px)
     display flex
     flex-direction column-reverse
@@ -616,4 +690,17 @@ $trim-color = #49e
     > *
       margin-left 0
       margin-bottom 24px
+
+.tools__container
+  background rgba(0, 0, 0, 0.15)
+  padding 8px 12px
+  border-radius 6px
+
+.button-easing-function
+  padding 3px 6px
+
+.encode__container
+  margin-top 40px
+  @media(max-width 800px)
+    margin-top 8px
 </style>

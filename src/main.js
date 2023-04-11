@@ -1,6 +1,11 @@
 import { createApp } from 'vue'
 import App from './App.vue'
+import { installDirectives } from './directives'
 
 import './assets/main.styl'
 
-createApp(App).mount('#app')
+const app = createApp(App)
+
+installDirectives(app)
+
+app.mount('#app')

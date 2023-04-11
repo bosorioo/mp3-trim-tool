@@ -34,7 +34,7 @@ button
   &.white
     color white
     &:hover
-      color #ccc
+      color #eee
 
   &.disable
   &.disabled
@@ -47,6 +47,9 @@ button
     border unset
     background transparent
 
+  &.outline
+    background transparent
+
   &.round
     border-radius 100%
 
@@ -55,3 +58,26 @@ button
 
   &.mini-icon
     padding 0
+
+.loading
+  position relative
+  &::after
+    content ''
+    animation loading-animation 0.6s both alternate infinite ease-in-out
+    position absolute
+    background white
+    width 8px
+    height 8px
+    border-radius 50px
+    bottom 0
+
+@keyframes loading-animation {
+  0% {
+    left calc(25% - 4px)
+    width 8px
+  }
+  100% {
+    left calc(75% - 4px)
+    width 8px
+  }
+}

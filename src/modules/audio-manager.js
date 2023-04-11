@@ -2,7 +2,13 @@ import lamejs from 'lamejs'
 
 export class AudioManager {
 
-  static applyExponentialGainToChannels (audioBuffersData, timeStart, duration = 6, rising = true) {
+  static applyExponentialGainToChannels (audioBuffersData, params = {}) {
+    const {
+      timeStart,
+      duration = 6,
+      rising = true,
+      easingFunction = (t) => t
+    } = params
     if (duration <= 0) {
       return
     }
@@ -12,14 +18,18 @@ export class AudioManager {
     const sampleIndexEndPct = Math.max(0, Math.min(timeEnd / totalDuration, 1))
     const channelsCount = Math.min(src.length, dst.length)
     const samplesLength = Math.min(src[0].length, dst[0].length)
+    const easingMemo = new Array(1e4)
+      .fill()
+      .map((_, index, src) => easingFunction(index / (src.length - 1)))
     for (let channelIndex = 0; channelIndex < channelsCount; channelIndex++) {
       const samplesSrc = src[channelIndex]
       const samplesDst = dst[channelIndex]
       const indexFrom = Math.floor(samplesLength * sampleIndexStartPct)
       const indexTo = Math.floor(samplesLength * sampleIndexEndPct)
       for (let index = indexFrom; index <= indexTo; index++) {
-        const t = (index - indexFrom) / (indexTo - indexFrom + 1)
-        const factor = Math.sin(t * Math.PI / 2)
+        const t = (index - indexFrom) / (indexTo - indexFrom)
+        const tIndex = Math.floor(t * easingMemo.length)
+        const factor = easingMemo[tIndex]
         samplesDst[index] = samplesSrc[index] * (rising ? factor : 1 - factor)
       }
     }
@@ -198,6 +208,8 @@ export class AudioManager {
     this.lastPlayTimestamp = undefined
     this.seekTimestamp = 0
 
+    this.easingFunction = (t) => t
+
     this.effects = []
     this.onEndCallbacks = []
   }
@@ -237,6 +249,12 @@ export class AudioManager {
       this.effects.push(effectData)
     }
 
+    this.applyEffects()
+    this.start(this.getCurrentTime(), this.isPlaying)
+    return true
+  }
+
+  applyEffects () {
     for (let channelIndex = 0; channelIndex < this.channelsData.length; channelIndex++) {
       const src = this.channelsDataOriginal[channelIndex]
       const dst = this.channelsData[channelIndex]
@@ -251,9 +269,12 @@ export class AudioManager {
             src: this.channelsDataOriginal,
             totalDuration: this.audioBuffer.duration
           },
-          effect.timeStart,
-          effect.duration,
-          effect.type === 'fadeIn'
+          {
+            timeStart: effect.timeStart,
+            duration: effect.duration,
+            rising: effect.type === 'fadeIn',
+            easingFunction: this.easingFunction
+          }
         )
       }
     }
@@ -261,9 +282,6 @@ export class AudioManager {
     for (let channelIndex = 0; channelIndex < this.channelsData.length; channelIndex++) {
       this.audioBuffer.copyToChannel(this.channelsData[channelIndex], channelIndex)
     }
-
-    this.start(this.getCurrentTime(), this.isPlaying)
-    return true
   }
 
   addOnEndCallback (callback) {
@@ -271,6 +289,10 @@ export class AudioManager {
       this.onEndCallbacks.push(callback)
       return true
     }
+  }
+
+  setEasingFunction (func) {
+    this.easingFunction = func
   }
 
   setMute (isMute) {
