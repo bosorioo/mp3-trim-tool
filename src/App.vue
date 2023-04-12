@@ -289,6 +289,7 @@ function onClickPlayPause () {
 }
 
 function onClickStop () {
+  audioManager.value.initContext()
   audioManager.value.start(timeTrim.value.start, false)
   isPlaying.value = false
 }

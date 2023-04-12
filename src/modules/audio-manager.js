@@ -194,12 +194,11 @@ export class AudioManager {
   }
 
   constructor () {
-    this.context = new AudioContext()
+    this.context = null
     this.audioBuffer = null
     this.channelsData = null
 
-    this.gain = new GainNode(this.context)
-    this.gain.connect(this.context.destination)
+    this.gain = null
     this.volume = 1
     this.isMute = false
 
@@ -212,6 +211,19 @@ export class AudioManager {
 
     this.effects = []
     this.onEndCallbacks = []
+
+    this.initContext()
+  }
+
+  initContext () {
+    if (this.context) {
+      this.close()
+    }
+
+    this.context = new AudioContext()
+    this.gain = new GainNode(this.context)
+    this.gain.connect(this.context.destination)
+    this.setGain(this.volume)
   }
 
   decodeBuffer (arrayBuffer) {
