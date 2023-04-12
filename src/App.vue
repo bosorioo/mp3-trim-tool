@@ -46,6 +46,7 @@ const audioManager = shallowRef(null)
 const encodeProgress = shallowRef(null)
 const encodedObjectUrl = shallowRef(null)
 const isDecodingAudio = shallowRef(false)
+const volumeGain = shallowRef(0)
 const selectedEasingFunctionName = localStorageRef('', 'ease-func')
 const isEasingFunctionSelectorOpen = shallowRef(false)
 const isPlaying = shallowRef(false)
@@ -70,6 +71,7 @@ const rendererOptions = {
   paddingX: 16,
   trimTimeStart: undefined,
   trimTimeEnd: undefined,
+  scaleY: 1,
   plotColor: (ctx, canvas, details = {}) => {
     if (!canvas.sampleColorGradient) {
       const amplitude = 40
@@ -244,11 +246,12 @@ async function onUploadFiles (files) {
   timeTrim.value = { start: 0, end: Infinity }
   currentTime.value = 0
   fadeEffect.value = { start: 0, end: 0 }
+  volumeGain.value = 0
   if (encodedObjectUrl.value) {
     URL.revokeObjectURL(encodedObjectUrl.value)
     encodedObjectUrl.value = null
   }
-  manager.setGain(volume.value)
+  manager.setVolume(volume.value)
   manager.setMute(isMuted.value)
   manager.addOnEndCallback(() => { onClickStop() })
   audioManager.value = manager
@@ -320,7 +323,8 @@ function onClickEncode () {
     audioBuffer: audioBufferTransferable.data,
     options: {
       timeFrom: timeTrim.value.start,
-      timeTo: timeTrim.value.end
+      timeTo: timeTrim.value.end,
+      amplitudeFactor: audioManager.value.getVolumeGainMultiplier()
     }
   }, audioBufferTransferable.buffers)
 }
@@ -345,7 +349,7 @@ function onWindowResize () {
 
 watch(volume, () => {
   if (audioManager.value) {
-    audioManager.value.setGain(volume.value)
+    audioManager.value.setVolume(volume.value)
   }
 })
 
@@ -367,16 +371,16 @@ watch(timeTrim, () => {
   rendererOptions.trimTimeEnd = timeTrim.value.end
 }, { deep: true, flush: 'pre' })
 
-const rerenderCanvasDebounced = debounce(() => {
+const rerenderCanvasDebounced = debounce((forceWaveFormRender) => {
   if (canvasEl.value && audioManager.value) {
     AudioManager.renderAudioBufferToCanvas(canvasEl.value, audioManager.value.audioBuffer, {
       ...rendererOptions,
-      forceWaveFormRender: true
+      forceWaveFormRender
     })
   }
 }, {
-  delay: 25,
-  triggerCallLimit: 5
+  delay: 20,
+  triggerCallLimit: 3
 })
 
 watch([ timeTrim, fadeEffect ], () => {
@@ -391,7 +395,7 @@ watch([ timeTrim, fadeEffect ], () => {
       duration: fadeEffect.value.end,
       timeStart: Math.min(audioManager.value.audioBuffer.duration, timeTrim.value.end) - fadeEffect.value.end
     })
-    rerenderCanvasDebounced()
+    rerenderCanvasDebounced(true)
   }
 }, { deep: true })
 
@@ -400,9 +404,18 @@ watch([ audioManager, selectedEasingFunctionName ], (value) => {
   if (audioManager.value) {
     audioManager.value.setEasingFunction(easingInfo.function)
     audioManager.value.applyEffects()
-    rerenderCanvasDebounced()
+    rerenderCanvasDebounced(true)
   }
 }, { immediate: true })
+
+watch(volumeGain, () => {
+  if (audioManager.value) {
+    const value = Math.max(-1, Math.min((Number(volumeGain.value) || 0) / 100, 2))
+    audioManager.value.setVolumeGain(value)
+    rendererOptions.scaleY = value + 1
+    rerenderCanvasDebounced()
+  }
+})
 
 onMounted(() => {
   prefetchIcons([
@@ -470,6 +483,7 @@ main.column.p-y-3.items-center
         span.time-label {{ formatTimeToMMSSMS(currentTime) }}
       div.actions__container.m-x-6
         div.tools__container.column
+
           div.column.items-start
             span.white.weight-600.font-14.m-b-1 Trim options
             TimeTrimInput(
@@ -477,7 +491,8 @@ main.column.p-y-3.items-center
               v-model:end="timeTrim.end"
               :duration="audioManager.audioBuffer ? audioManager.audioBuffer.duration : 0"
             )
-          div.effects__container.column.m-t-6
+
+          div.effects__container.column.m-t-4
             div.row.items-center.full-width.m-b-2
               span.white.weight-600.font-14 Effects
               button(
@@ -518,6 +533,17 @@ main.column.p-y-3.items-center
                     @click="changeFade('end', -1)"
                   ).m-l-1.mini-icon.round.flat.white
                     SvgIcon(name="minus-circle" :size="19")
+
+          div.row.items-center.m-t-4
+            span.white.weight-600.font-14 Volume gain
+            div.volume-gain-input__container.m-l-2
+              input(
+                v-model="volumeGain"
+                type="number"
+                min="-100"
+                max="200"
+              )
+
         div.column.items-center
           div.row
             button(@click="onClickPlayPause").icon.m-1
@@ -699,6 +725,37 @@ $trim-color = #49e
 
 .button-easing-function
   padding 3px 6px
+
+.volume-gain-input__container
+  position relative
+  color white
+  font-weight 600
+  input
+    min-width 36px
+    width fit-content
+    max-width 44px
+    background rgba(0, 0, 0, 0.1)
+    outline none
+    text-align center
+    padding-right 2px
+    border unset
+    color white
+    font-weight 600
+    border-radius 4px
+    padding 2px 4px
+  &::before
+    :hover&
+    :focus&
+    :focus-within&
+    :focus-visible&
+    :active&
+      opacity 0
+    pointer-events none
+    position absolute
+    right 2px
+    bottom 4px
+    font-size 11px
+    content '%'
 
 .encode__container
   margin-top 40px

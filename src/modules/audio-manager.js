@@ -62,7 +62,8 @@ export class AudioManager {
       amplitudeFactor = 0.5,
       trimTimeStart = 0,
       trimTimeEnd = Infinity,
-      forceWaveFormRender = false
+      forceWaveFormRender = false,
+      scaleY = 1
     } = options
     const width = canvas.width - 2 * paddingX
     const height = canvas.height
@@ -88,7 +89,7 @@ export class AudioManager {
       const samples = audioBuffer.getChannelData(0)
       const max = 1
 
-      const halfWindowSize = Math.min(150, ((audioBuffer.length / width) >> 2) - 1)
+      const halfWindowSize = Math.min(75, ((audioBuffer.length / width) >> 2) - 1)
       for (let x = 0; x < width; x++) {
         const pctX = x / width
         const sampleIndexBase = Math.floor(pctX * audioBuffer.length)
@@ -108,8 +109,10 @@ export class AudioManager {
     }
 
     const ctx = canvas.getContext('2d')
+    const imageHeight = canvas.height * scaleY
+    const dx = (canvas.height - imageHeight) >> 1
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(cachedWaveFormImage, 0, 0)
+    ctx.drawImage(cachedWaveFormImage, 0, dx, canvas.width, imageHeight)
     const globalCompositeOperation = ctx.globalCompositeOperation
     ctx.globalCompositeOperation = 'source-atop'
 
@@ -138,7 +141,8 @@ export class AudioManager {
       kbps = 256,
       onProgress,
       timeFrom = 0,
-      timeTo = Infinity
+      timeTo = Infinity,
+      amplitudeFactor = 1
     } = options
     const mp3Encoder = new lamejs.Mp3Encoder(audioBuffer.numberOfChannels, audioBuffer.sampleRate, kbps)
     const channels = [
@@ -163,7 +167,8 @@ export class AudioManager {
       const thisBlockSize = Math.min(length - sampleBaseIndex, blockSize)
       for (let sampleDeltaIndex = 0; sampleDeltaIndex < thisBlockSize; sampleDeltaIndex++) {
         const sampleIndex = sampleDeltaIndex + sampleBaseIndex
-        let sampleClampedFloat = Math.max(-1, Math.min(channels[0][sampleIndex], 1))
+        let sampleFloatScaled = channels[0][sampleIndex] * amplitudeFactor
+        let sampleClampedFloat = Math.max(-1, Math.min(sampleFloatScaled, 1))
         let sampleInt16 = Math.floor(
           sampleClampedFloat >= 0
             ? sampleClampedFloat * 32767
@@ -171,7 +176,8 @@ export class AudioManager {
         )
         leftData[sampleDeltaIndex] = sampleInt16
         if (audioBuffer.numberOfChannels > 1) {
-          sampleClampedFloat = Math.max(-1, Math.min(channels[1][sampleIndex], 1))
+          sampleFloatScaled = channels[1][sampleIndex] * amplitudeFactor
+          sampleClampedFloat = Math.max(-1, Math.min(sampleFloatScaled, 1))
           sampleInt16 = Math.floor(
             sampleClampedFloat >= 0
               ? sampleClampedFloat * 32767
@@ -200,6 +206,7 @@ export class AudioManager {
 
     this.gain = null
     this.volume = 1
+    this.volumeGain = 0
     this.isMute = false
 
     this.hasStarted = false
@@ -223,7 +230,7 @@ export class AudioManager {
     this.context = new AudioContext()
     this.gain = new GainNode(this.context)
     this.gain.connect(this.context.destination)
-    this.setGain(this.volume)
+    this.updateGainNodeValue()
   }
 
   decodeBuffer (arrayBuffer) {
@@ -307,17 +314,29 @@ export class AudioManager {
     this.easingFunction = func
   }
 
-  setMute (isMute) {
+  setMute (isMute = true) {
     this.isMute = isMute
-    this.setGain(this.volume)
+    this.updateGainNodeValue()
   }
 
-  setGain (value) {
+  setVolume (value) {
     value = Math.max(0, Math.min(value, 5))
     this.volume = value
-    this.gain.gain.value = this.isMute
-      ? 0
-      : this.volume
+    this.updateGainNodeValue()
+  }
+
+  setVolumeGain (value) {
+    this.volumeGain = Math.max(-1, Math.min(value, 2))
+    this.updateGainNodeValue()
+  }
+
+  getVolumeGainMultiplier () {
+    return 1 + this.volumeGain
+  }
+
+  updateGainNodeValue () {
+    const gainValue = (this.isMute ? 0 : this.volume) * this.getVolumeGainMultiplier()
+    this.gain.gain.value = gainValue
   }
 
   getGain () {
