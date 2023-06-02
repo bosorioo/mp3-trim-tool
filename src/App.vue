@@ -439,7 +439,11 @@ onMounted(() => {
       seekAudio(undefined, currentTime.value + delta)
     } else if (event.code === 'KeyM') {
       isMuted.value = !isMuted.value
+    } else {
+      return
     }
+    event.preventDefault()
+    event.stopPropagation()
   })
 })
 </script>
